@@ -1,218 +1,108 @@
 ---
-title: "DATA622_test1"
+title: "Data 622 Test1"
 author: "Samriti Malhotra"
 date: "11/11/2020"
 output:
   html_document: default
   pdf_document: default
-  word_document: default
 ---
 
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
-library(bootstrap)
+```{r echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+library(dplyr)
+library(kableExtra)
+library(ggplot2)
+library(ipred)
+library(ROCR)
 library(e1071)
-library(caret)
-library(ModelMetrics)
-library(knitr)
-require(bootstrap)
-library(rpart)       # for fitting decision trees
-
-
+library(pROC)
+library(class)
 ```
 
-## Data summary
-* Load and review the data.
-* Dataset has 36 confusionMatrixervations 
-  2 predictor variables:
-    x: numeric values where min value - 5 and max value - 63
-    y: categorical values from "a" to "f"
-    
-* Target Value label: class "Black" and "Blue"
+## Read Data
+```{r}
+
+
+
+df <- read.csv("data_hw1_622.csv", header = TRUE, sep =",") 
+str(df)
+# printing the top 5 rows of the data frame.
+kable(head(df)) %>% 
+  kable_styling(bootstrap_options = c("striped","hover","condensed","responsive"),full_width   = F,position = "left",font_size = 12) %>%
+  row_spec(0, background ="gray") 
+
+ggplot(df,aes(y=Y,x=X,color=label)) + geom_point()
+```
+The data has 36 rows and 3 columns , out of which columns 'Y' and 'label' are Character and column 'X' is int, but all the columns are categorical in nature and hence can be converted to factors  to be consistent.                                                                         
+
+### Prepare data                                                           
+
 
 ```{r}
-df <- data.frame(
-  X = as.factor(c(5, 5, 5, 5, 5, 5, 19, 19, 19, 19, 19, 19, 35, 35, 35, 35, 35, 35, 51, 51, 51, 51, 51, 51, 55, 55, 55, 55, 55, 55, 63, 63, 63, 63, 63, 63)),
-  Y = as.factor(c("a","b","c","d","e","f","a","b","c","d","e","f","a","b","c","d","e","f","a","b","c","d","e","f","a","b","c","d","e","f","a","b","c","d","e","f")),
-  label = as.factor(c("BLUE","BLACK","BLUE","BLACK","BLACK","BLACK","BLUE","BLUE","BLUE","BLUE","BLACK","BLUE","BLACK","BLACK","BLUE","BLACK","BLACK","BLACK","BLACK","BLACK","BLUE","BLACK","BLACK","BLACK","BLACK","BLACK","BLACK","BLACK","BLACK","BLACK","BLACK","BLUE","BLUE","BLUE","BLUE","BLUE"))
-)
+df$X = as.factor(df$X)
+df$Y = as.factor(df$Y)
+df$label = as.factor(df$label)
+#df[sapply(df, is.character)] <- lapply(df[sapply(df, is.character)], as.factor)
 
-
+# summary statistics of the columns
 summary(df)
-
-```
-## Base Modeling
-
-In this section we will apply 3 learning algorithms to the dataset: Logistic Regression  , Naive  Bayes , KNN. 
-We will split dataset into train and test following training and evaluation framework provided in the caret library for each alogirithm we produce:
-  * Training summary
-  * Model Summary 
-  * Confusion Matrix based on model predictions for the dataset.
-  
-   **Logistic regression** (glm with family = “binomial”): no parameter tuning
-
-   **Naive Bayes**  naiveBayes from e1071 
-   
-   **K-nearest neighbors** (knn from base R): tuning of k parameter
-
-
-
-```{r}
-# Data Preparation and Training/Test datasets split
-
-set.seed(200)
-respCol <- ncol(df)[[1]]
-train <- createDataPartition(df[,respCol], p = .70)
-obs <- df[-train$Resample1, respCol]
-
-perfALG <- c("LR", "NB",  "KNN")
-perfAUC = numeric()
-perfACC = numeric()
-perfTPR = numeric()
-perfFPR = numeric()
-
+str(df)
 ```
 
+## Split Dataset                                             
+```{r}
+
+set.seed(53)
+
+trainidx<-sample(1:nrow(df) , size=round(0.77*nrow(df)),replace=F) 
+train_set <- df[trainidx,]
+test_set <- df[-trainidx,]
+
+
+```
+                                    
+##  (A) Run Bagging (ipred package)   
+
+  -- sample with replacement
+
+  -- estimate metrics for a model
+
+  -- repeat as many times as specied and report the average
 
 ```{r}
-## Logistic Regression (LR) Model
-set.seed(203)
+# Bagging
+trainBgModel <- bagging(label ~ ., data=train_set, nbagg = 100, coob = TRUE)
+trainBgModel
 
-lrFit <- glm(label~., data = df[train$Resample1, ], family = binomial)
-#summary(lrFit)
-lrProb <- predict(lrFit, newdata = df[-train$Resample1,], type = "response")
-#contrasts(df[, respCol])
-lrPred <- rep("BLACK", length(lrProb))
-lrPred[lrProb > 0.5] = "BLUE"
-lrPred = as.factor(lrPred)
-perfAUC <- c(perfAUC, auc(actual = obs, predicted = lrPred))
-perfACC <- c(perfACC, postResample(lrPred, obs)["Accuracy"])
-perfTPR <- c(perfTPR, caret::sensitivity(lrPred, obs))
-perfFPR <- c(perfFPR, 1 - caret::specificity(lrPred, obs))
-table(lrPred, obs)
+confMat_train <- table(predict(trainBgModel), train_set$label)
+confMat_train
 
-cm_LOGR <- table(lrPred, obs)
-
-auc_LOGR <- auc(actual = obs, predicted = lrPred)
-acc_LOGR <- sum(diag(cm_LOGR)) / sum(cm_LOGR)
-tpr_LOGR <- cm_LOGR[1,1]/sum(cm_LOGR[1,1], cm_LOGR[2,1])
-fpr_LOGR <- cm_LOGR[1,2]/sum(cm_LOGR[1,2], cm_LOGR[2,2])
-tnr_LR <- cm_LOGR[2,2]/sum(cm_LOGR[2,2], cm_LOGR[1,2])
-fnr_LR <- cm_LOGR[2,1]/sum(cm_LOGR[2,1], cm_LOGR[1,1])
-
-
-LRrow <- c("LOGR",round(auc_LOGR,2),round(acc_LOGR,2),round(tpr_LOGR,2),round(fpr_LOGR,2), round(tnr_LR,2), round(fnr_LR,2))
+testbag = predict(trainBgModel, newdata=test_set)
+confusionMat_bg <- table(testbag, test_set$label)
+confusionMat_bg
 
 
 ```
 
-
 ```{r}
-set.seed(201)
-
-nbFit <- naiveBayes(label ~ ., data = df[train$Resample1, ])
-#print(nbFit)
-nbPred <- predict(nbFit, newdata = df[-train$Resample1,], type = "class")
-#postResample(nbPred, obs)
-perfAUC <- c(perfAUC, auc(actual = obs, predicted = nbPred))
-perfACC <- c(perfACC, postResample(nbPred, obs)["Accuracy"])
-perfTPR <- c(perfTPR, caret::sensitivity(nbPred, obs))
-perfFPR <- c(perfFPR, 1 - caret::specificity(nbPred, obs))
-
-
-cm_NAIVEB <-  table(nbPred, obs)
-auc_NAIVEB <- auc(actual = obs, predicted = nbPred)
-acc_NAIVEB <- sum(diag(cm_NAIVEB))/sum(cm_NAIVEB)
-tpr_NAIVEB <- cm_NAIVEB[1,1]/sum(cm_NAIVEB[1,1], cm_NAIVEB[2,1])
-fpr_NAIVEB <- cm_NAIVEB[1,2]/sum(cm_NAIVEB[1,2], cm_NAIVEB[2,2])
-#tnr_NAIVEB<- 1 - fpr_NAIVEB
-tnr_NAIVEB <- cm_NAIVEB[2,2]/sum(cm_NAIVEB[2,2], cm_NAIVEB[1,2])
-fnr_NAIVEB <- cm_NAIVEB[2,1]/sum(cm_NAIVEB[2,1], cm_NAIVEB[1,1])
-
-NAIVEBrow <- c("NAIVEBAYES",round(auc_NAIVEB,2),round(acc_NAIVEB,2),round(tpr_NAIVEB,2),round(fpr_NAIVEB,2), round(tnr_NAIVEB,2), round(fnr_NAIVEB,2))
-
-
-
-```
-
-
-```{r}
-
-# KNN 3
-
-set.seed(300)
-knnFit <- knn3(label ~., data = df[train$Resample1,], k=3)
-knnPred <- predict(knnFit, newdata = df[-train$Resample1,], type = "class")
-#postResample(knnPred, obs)
-perfAUC <- c(perfAUC, auc(actual = obs, predicted = knnPred))
-perfACC <- c(perfACC, postResample(knnPred, obs)["Accuracy"])
-perfTPR <- c(perfTPR, caret::sensitivity(knnPred, obs))
-perfFPR <- c(perfFPR, 1 - caret::specificity(knnPred, obs))
-table(knnPred, obs)
-
-cm_KNN <-  table(knnPred, obs)
-
-auc_knn <- auc(actual = obs, predicted = knnPred)
-acc_KNN <- sum(diag(cm_KNN))/sum(cm_KNN)
-tpr_KNN <- cm_KNN[1,1]/sum(cm_KNN[1,1], cm_KNN[2,1])
-fpr_KNN <- cm_KNN[1,2]/sum(cm_KNN[1,2], cm_KNN[2,2])
-#tnr_KNN <- 1 - fpr_KNN
-tnr_KNN <- cm_KNN[2,2]/sum(cm_KNN[2,2], cm_KNN[1,2])
-fnr_KNN <- cm_KNN[2,1]/sum(cm_KNN[2,1], cm_KNN[1,1])
-
-KNNrow <- c("KNN 3",round(auc_knn,2),round(acc_KNN,2),round(tpr_KNN,2),round(fpr_KNN,2), round(tnr_KNN,2),round(fnr_KNN,2) )
-
-
-# KNN 5
-set.seed(290)
-data_train <-df[train$Resample1,]
-data_train_knn<-df[train$Resample1,]
-data_train_knn$Y<-apply(as.data.frame(data_train_knn$Y),1,utf8ToInt)
-data_test_knn<-df[-train$Resample1,]
-data_test_knn$Y<-apply(as.data.frame(data_test_knn$Y),1,utf8ToInt)
-
-knn_model <- class::knn(cl = data_train$label,
-                  test = data_test_knn[,1:2],
-                  k = 5,
-                  train = data_train_knn[,1:2],
-                  prob = TRUE)
-
-(confusion_matrix_KNN<-table(knn_model,data_test_knn[,3]))
-
-
 # Calculating  the ACC,TPR,FPR,TNR & FNR from confusion matrix
-acc_KNN5 <- sum(diag(confusion_matrix_KNN)) / sum(confusion_matrix_KNN)
+acc_bag <- sum(diag(confusionMat_bg)) / sum(confusionMat_bg)
+tpr_bag <- confusionMat_bg[1,1]/sum(confusionMat_bg[1,1], confusionMat_bg[2,1])
+fpr_bag <- confusionMat_bg[1,2]/sum(confusionMat_bg[1,2], confusionMat_bg[2,2])
+tnr_bag <- confusionMat_bg[2,2]/sum(confusionMat_bg[2,2], confusionMat_bg[1,2]) 
+fnr_bag <- confusionMat_bg[2,1]/sum(confusionMat_bg[2,1], confusionMat_bg[1,1])
+auc_bag <- auc(roc(testbag, ifelse(test_set$label == 'BLUE', 1, 0)))
 
-tpr_KNN5 <- confusion_matrix_KNN[1,1]/sum(confusion_matrix_KNN[1,1], confusion_matrix_KNN[2,1])
-fpr_KNN5 <- confusion_matrix_KNN[1,2]/sum(confusion_matrix_KNN[1,2], confusion_matrix_KNN[2,2])
-tnr_KNN5 <- confusion_matrix_KNN[2,2]/sum(confusion_matrix_KNN[2,2], confusion_matrix_KNN[1,2])
-fnr_KNN5 <- confusion_matrix_KNN[2,1]/sum(confusion_matrix_KNN[2,1], confusion_matrix_KNN[1,1])
+Bgrow <- c("Bagging ",round(auc_bag,2), round(acc_bag,2),round(tpr_bag,2),round(fpr_bag,2), round(tnr_bag,2),round(fnr_bag,2))
 
-KNNrow5 <- c("KNN 5",round(auc_knn,2),round(acc_KNN5,2),round(tpr_KNN5,2),round(fpr_KNN5,2), round(tnr_KNN5,2),round(fnr_KNN5,2) )
+Bgrow
 
-
-
+resMatrix <- data.frame(matrix(ncol = 6, nrow = 0))
+resMatrix <- rbind(resMatrix,Bgrow)
+colnames(resMatrix) <- c("ALGO", "AUC","ACC", "TPR", "FPR", "TNR ", "FNR")
 
 ```
-
- Performance metric calculated using caret .
-```{r}
-
-perf <- data.frame(
-  ALGO = perfALG,
-  AUC = perfAUC,
-  ACC = perfACC,
-  TPR = perfTPR,
-  FPR = perfFPR
-)
-perf
-```
-
-
-
-
+                                             
 ## (B) Run LOOCV (jacknife) for the same dataset 
 
   
@@ -236,110 +126,82 @@ Compare (A), (B) above with the results you obtained in HW-1  and write 3 senten
 observed difference.
 
 
+```{r  message=FALSE, warning=FALSE, paged.print=FALSE}
 
-
-```{r}
-
-set.seed(45)
-train.index <- createDataPartition(df$label, p = 0.7, list = FALSE)
-train <- df[ train.index,]
-test  <- df[-train.index,]
-
-N<-nrow(train)
-train$label <- ifelse(train$label == 'BLUE', 1, 0)
-cv_df  <- do.call('rbind',lapply(1:N,FUN=function(idx,data=train) { ### Iterate Over All Points
-   ### Keep One Observation as Test
-   m <- naiveBayes(label~., data = data[-idx,])
-   ### Train Using the Rest of Observations, predict that one observation
-   p <- predict(m, data[idx,-c(3)], type='raw') 
-   # NB returns the probabilities of the classes, 
-   # as per Bayesian Classifier, we take the classs with the higher probability
-   pc <- unlist(apply(round(p), 1, which.max))-1 
-   list("fold"=idx, "m"=m, "predicted"=pc, "actual" = data[idx,c(3)])
-  }
-))
-
-cv_df<-as.data.frame(cv_df)
-loocv_tbl<-table(as.numeric(cv_df$actual),as.numeric(cv_df$predicted))
-(loocv_caret_cfm<-caret::confusionMatrix(loocv_tbl))
-
-```
-
-```{r}
-test$label <- ifelse(test$label == 'BLUE', 1, 0)
-cv_df <- data.frame(cv_df)
-df.perf<-as.data.frame(do.call('cbind',lapply(cv_df$m,FUN=function(m,data=test)
+data <- df
+acc <- NULL
+for(i in 1:nrow(data))
 {
-   ### Determine Test Metrics
-  v <- predict(m,data[,-c(3)],type='raw')
-  lbllist <- unlist(apply(round(v), 1, which.max))-1
- 
+    # Train-test splitting
+    # 35 samples -> fitting
+    # 1 sample -> testing
+    train <- data[-i,]
+    test <- data[i,]
+    
+    
+    # Fitting
+    model <- glm(label~.,family=binomial,data=train)
+    pred_glm <- predict(model,test,type='response')
+   
+   # If prob > 0.5 then 1, else 0
+    results <- ifelse(pred_glm > 0.5,"BLUE","BLACK")
+    
+    # Actual answers
+    answers <- test$label
+   
+    # Calculate accuracy
+    misClasificError <- mean(answers != results)
+    
+    # Collecting results
+    acc[i] <- 1-misClasificError
+    
+    
 }
-  )))
 
-### Aggregate Test Metrics
-np <- ncol(df.perf)
-predclass <- unlist(apply(df.perf,1,FUN=function(v){ ifelse(sum(v[2:length(v)])/np<0.5,0,1)}))
-loocvtbl <- table(test[,3], predclass)
-(loocv_cfm<-caret::confusionMatrix(loocvtbl))
+# Average accuracy of the model
 
-
-
-
-loocvtbl <- table(test[,3], predclass)
-
-
-
-# Calculating  the ACC,TPR,FPR,TNR & FNR from confusion matrix
-auc_NBC <- auc(actual = obs, predicted = predclass)
-acc_NBC <- sum(diag(loocvtbl)) / sum(loocvtbl)
-tpr_NBC <- loocvtbl[1,1]/sum(loocvtbl[1,1], loocvtbl[2,1])
-fpr_NBC <- loocvtbl[1,2]/sum(loocvtbl[1,2], loocvtbl[2,2])
-tnr_NBC <- loocvtbl[2,2]/sum(loocvtbl[2,2], loocvtbl[1,2])
-fnr_NBC <- loocvtbl[2,1]/sum(loocvtbl[2,1], loocvtbl[1,1])
-
-# Putting all the values for Logistic regression into a row.
-NB_LOOCVrow <- c("NB with LOOCV ",round(auc_NBC,2), round(acc_NBC,2),round(tpr_NBC,2),round(fpr_NBC,2), round(tnr_NBC,2),round(fnr_NBC,2))
-
-```
-
-
-
-
-##  (A) Run Bagging (ipred package)   
-
-  -- sample with replacement
-
-  -- estimate metrics for a model
-
-  -- repeat as many times as specied and report the average
-
-```{r}
+mean(acc)
 
 
 ```
+                                        
 
+### Naive Bayes                                   
 
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
 
+data <- df
+acc <- NULL
+for(i in 1:nrow(data))
+{
+    # Train-test splitting
+    # 35 samples -> fitting
+    # 1 sample -> testing
+    train <- data[-i,]
+    test <- data[i,]
+    
+    
+    # Fitting
+    model <- naiveBayes(label~.,data=train)
+    pred_nb <- predict(model,test,type='raw')
+   
+   # If prob > 0.5 then 1, else 0
+    results <- ifelse(pred_nb > 0.5,"BLUE","BLACK")
+    
+    # Actual answers
+    answers <- test$label
+   
+    # Calculate accuracy
+    misClasificError <- mean(answers != results)
+    
+    # Collecting results
+    acc[i] <- 1-misClasificError
+}
 
-It is difficult to declare evident winner  among the classifier. as multiple runs will select different training and testing data. This influence training and performance of each model during each run.As per perfoomance reading we can see Linear Regression performed best with good AUC , TPR and FPR. 
-
-```{r}
-results <- data.frame(matrix(ncol = 6, nrow = 0))
-results <- rbind(results,LRrow,NAIVEBrow,KNNrow, KNNrow5  , NB_LOOCVrow)
-colnames(results) <- c("ALGO", "AUC","ACC", "TPR", "FPR", "TNR", "FNR")
-#results
-kable(results[order(-as.numeric(results$ACC)),])
+mean(acc)
 ```
+## Conclusion:
 
-
-
-**Logistic Regression** - The GLM linear regression model shows that the highest accuracy , AUC and TPR. This tells us the model did an above average job at classfication.As shown in  scatter plot performance profiles, which is expected to produce linear separation boundaries in the predictor X-Y space. 
-
-**Naive Bayes** - The NB model has the least performance stats which  catergorizes it as an average model.
-Generally NB performs reasonably well on the training set . We should test performance over resampled test sets. For this model, tuning should be performed through cross-validation to determine the predictor distribution assumption, which can be chosen as a kernel density estimate (rather than the normal distribution). 
-
-**KNN (3,5)** - The KNN model accuracy is same as LR 0.8 but AUC is less than LR .79 and TPR is among the highest.Appears to perform in line with the linear classifiers (logistic Regression).The model was tuned to determine the optimal value of k, which was chosen to be 5. Perhaps with a larger dataset, performance of the kNN classifier would be more clearly distinguishable versus the linear classifiers. 
-
-## Conclusion
-The Bagging method produced accuracy of 0.79 and LOOCV produced accuracy of 0.38. Both models perform differently with bagging scoring better. Bagging is a method to reduce overfitting. You train many models on resampled data and then take their average to get an averaged model. This model is less susceptible to overfitting than the individual models you’ve fit. LOOCV cross validation, on the other hand, is used to estimate the out of sample accuracy.
+ The accuracy of Bagging method is (.88) and LOOCV produced accuracy of (.51) for NB and (.77) for GLB. Both models performed differently and score better. Bagging is a method to reduce over fitting. It trains many models on resampled data and then take their average to get an averaged model. 
+ 
+ 
