@@ -1,0 +1,551 @@
+---
+title: "Data622_HW2"
+author: "Samriti Malhotra"
+date: "12/1/2020"
+output:
+  html_document: default
+  pdf_document: default
+  df_print: paged
+  toc: yes
+  toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(caret)
+library(pROC)
+library(tidyverse)
+library (kableExtra)
+```
+
+## PART A
+STEP#0: Pick any two classifiers of (SVM,Logistic,DecisionTree,NaiveBayes). Pick heart or ecoli dataset.
+Heart is simpler and ecoli compounds the problem as it is NOT a balanced dataset. From a grading
+perspective both carry the same weight.
+STEP#1 For each classifier, Set a seed (43)
+STEP#2 Do a 80/20 split and determine the Accuracy, AUC and as many metrics as returned by the Caret
+package (confusionMatrix) Call this the base_metric. Note down as best as you can development
+(engineering) cost as well as computing cost(elapsed time).
+Start with the original dataset and set a seed (43). Then run a cross validation of 5 and 10 of the model
+on the training set. Determine the same set of metrics and compare the cv_metrics with the
+base_metric. Note down as best as you can development (engineering) cost as well as computing
+cost(elapsed time).
+Start with the original dataset and set a seed (43) Then run a bootstrap of 200 resamples and compute
+the same set of metrics and for each of the two classifiers build a three column table for each
+experiment (base, bootstrap, cross-validated). Note down as best as you can development (engineering)
+cost as well as computing cost(elapsed time).
+
+### Read Data 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+heart<-read.csv("heart.csv",head=T,sep=',',stringsAsFactors=F)
+head(heart)
+
+str(heart)
+```
+
+### Data Transformation
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+heart$target <- as.factor(heart$target)
+heart$sex <- as.factor(heart$sex)
+heart$cp <- as.factor(heart$cp)
+heart$fbs <- as.factor(heart$fbs)
+heart$restecg <- as.factor(heart$restecg)
+heart$exang <- as.factor(heart$exang)
+heart$slope <- as.factor(heart$slope)
+heart$ca <- as.factor(heart$ca)
+heart$thal <- as.factor(heart$thal)
+```
+
+### Split Data 
+```{r  message=FALSE, warning=FALSE}
+x <- floor(0.8 * nrow(heart))
+raw <- sample(seq_len(nrow(heart)), size = x)
+train_heart <- heart[ raw,]
+test_heart  <- heart[-raw,]
+```
+
+### Base Decision Tree
+```{r  message=FALSE, warning=FALSE}
+
+timer <- proc.time()
+
+set.seed(43)
+
+train_model = train(
+    form = target ~ .,
+    data = train_heart,
+    trControl = trainControl(method="none"),
+    method = "rpart"
+    )
+    print(train_model)
+    
+dt_cm <- confusionMatrix(predict(train_model, subset(test_heart, select = -c(target))), test_heart$target)
+print(paste("Base Decision Tree", 'Results'))
+    print(dt_cm)
+    
+    duration <- (proc.time() - timer)[[3]]
+    
+
+    #metrics
+    dt_accuracy <- dt_cm$overall[[1]]
+    dt_auc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+    dt_sensitivity <- dt_cm$byClass[[1]]
+    dt_specificity <- dt_cm$byClass[[2]]
+    dt_precision <- dt_cm$byClass[[5]]
+    dt_recall <- dt_cm$byClass[[6]]
+    dt_f1_score <- dt_cm$byClass[[7]]
+    dt_duration <- duration
+    
+    base_dt <- c("Decision Tree Base ",round(dt_accuracy,2),round(dt_auc,2),round(dt_sensitivity,2),round(dt_specificity,2), round(dt_precision,2),round(dt_recall,2),round(dt_f1_score,2),round(dt_duration,2) )
+    
+    
+```
+
+### Base Support Vector Machine
+```{r  message=FALSE, warning=FALSE}
+
+train_model = train(
+    form = target ~ .,
+    data = train_heart,
+    trControl = trainControl(method="none"),
+    method = "svmLinear"
+    )
+    print(train_model)
+    
+SVM_cm <- confusionMatrix(predict(train_model, subset(test_heart, select = -c(target))), test_heart$target)
+print(paste("Base SVM", 'Results'))
+    print(SVM_cm)
+    
+    duration <- (proc.time() - timer)[[3]]
+    
+
+    #metrics
+    SVM_accuracy <- SVM_cm$overall[[1]]
+    SVM_auc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+    SVM_sensitivity <- SVM_cm$byClass[[1]]
+    SVM_specificity <- SVM_cm$byClass[[2]]
+    SVM_precision <- SVM_cm$byClass[[5]]
+    SVM_recall <- SVM_cm$byClass[[6]]
+    SVM_f1_score <- SVM_cm$byClass[[7]]
+    SVM_duration <- duration
+    
+    base_svm <- c("SVM Base ",round(SVM_accuracy,2),round(SVM_auc,2),round(SVM_sensitivity,2),round(SVM_specificity,2), round(SVM_precision,2),round(SVM_recall,2),round(SVM_f1_score,2),round(SVM_duration,2) )
+    
+```
+
+### Cross Validation of 5 Decision Tree
+
+```{r  message=FALSE, warning=FALSE}
+
+train_model = train(
+  form = target ~ .,
+  data = heart,
+  trControl = trainControl(method = "cv", number = 5, savePredictions = 'final'),
+  method = "rpart"
+  )
+
+  print(train_model)
+  
+  #confusion matrix
+  dt_5_cm <- confusionMatrix(train_model$pred[order(train_model$pred$rowIndex),]$pred, heart$target)
+  
+  print(paste("Decision Tree 5 Fold", 'Results'))
+  print(dt_5_cm)
+  
+ 
+  duration <- (proc.time() - timer)[[3]]
+
+  # metrics
+  dt_5_cmaccuracy <- dt_5_cm$overall[[1]]
+  dt_5_cmauc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+  dt_5_cmsensitivity <- dt_5_cm$byClass[[1]]
+  dt_5_cmspecificity <- dt_5_cm$byClass[[2]]
+  dt_5_cmprecision <- dt_5_cm$byClass[[5]]
+  dt_5_cmrecall <- dt_5_cm$byClass[[6]]
+  dt_5_cmf1_score <- dt_5_cm$byClass[[7]]
+  dt_5_duration <- duration
+  
+   dt_5 <- c("Decision Tree 5 fold",round(dt_5_cmaccuracy,2),round(dt_5_cmauc,2),round(dt_5_cmsensitivity,2),round(dt_5_cmspecificity,2),round(dt_5_cmprecision,2), round(dt_5_cmrecall,2),round(dt_5_cmf1_score,2),round(dt_5_duration,2) )
+   
+  
+```
+
+### Cross Validation of 5 SVM
+
+```{r  message=FALSE, warning=FALSE}
+
+
+train_model = train(
+  form = target ~ .,
+  data = heart,
+  trControl = trainControl(method = "cv", number = 5, savePredictions = 'final'),
+  method = "svmLinear"
+  )
+
+  print(train_model)
+  
+  #confusion matrix
+  SVM_5_cm <- confusionMatrix(train_model$pred[order(train_model$pred$rowIndex),]$pred, heart$target)
+  
+  print(paste("SVM 5 Fold", 'Results'))
+  print(SVM_5_cm)
+  
+ 
+  duration <- (proc.time() - timer)[[3]]
+
+  # metrics
+  SVM_5_cmaccuracy <- SVM_5_cm$overall[[1]]
+  SVM_5_cmauc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+  SVM_5_cmsensitivity <- SVM_5_cm$byClass[[1]]
+  SVM_5_cmspecificity <- SVM_5_cm$byClass[[2]]
+  SVM_5_cmprecision <- SVM_5_cm$byClass[[5]]
+  SVM_5_cmrecall <- SVM_5_cm$byClass[[6]]
+  SVM_5_cmf1_score <- SVM_5_cm$byClass[[7]]
+  SVM_5_duration <- duration
+
+  SVM_5 <- c("SVM 5 Fold ",round(SVM_5_cmaccuracy,2),round(SVM_5_cmauc,2),round(SVM_5_cmsensitivity,2),round(SVM_5_cmspecificity,2), round(SVM_5_cmprecision,2),round(SVM_5_cmrecall,2),round(SVM_5_cmf1_score,2),round(SVM_5_duration,2) )
+   
+```
+
+### Cross Validation of 10 Decision Tree
+
+```{r  message=FALSE, warning=FALSE}
+
+train_model = train(
+  form = target ~ .,
+  data = heart,
+  trControl = trainControl(method = "cv", number = 10, savePredictions = 'final'),
+  method = "rpart"
+  )
+
+  print(train_model)
+  
+  #confusion matrix
+  dt_10_cm <- confusionMatrix(train_model$pred[order(train_model$pred$rowIndex),]$pred, heart$target)
+  
+  print(paste("Decision Tree 10 Fold", 'Results'))
+  print(dt_10_cm)
+  
+ 
+  duration <- (proc.time() - timer)[[3]]
+
+  # metrics
+  dt_10_cmaccuracy <- dt_10_cm$overall[[1]]
+  dt_10_cmauc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+  dt_10_cmsensitivity <- dt_10_cm$byClass[[1]]
+  dt_10_cmspecificity <- dt_10_cm$byClass[[2]]
+  dt_10_cmprecision <- dt_10_cm$byClass[[5]]
+  dt_10_cmrecall <- dt_10_cm$byClass[[6]]
+  dt_10_cmf1_score <- dt_10_cm$byClass[[7]]
+  dt_10_duration <- duration
+  
+   dt_10 <- c("Decision Tree 10 Fold",round(dt_10_cmaccuracy,2),round(dt_10_cmauc,2),round(dt_10_cmsensitivity,2),round(dt_10_cmspecificity,2), round(dt_10_cmprecision,2),round(dt_10_cmrecall,2),round(dt_10_cmf1_score,2),round(dt_10_duration,2) )
+  
+  
+```
+
+### Cross Validation of 10 SVM
+
+```{r  message=FALSE, warning=FALSE}
+
+
+train_model = train(
+  form = target ~ .,
+  data = heart,
+  trControl = trainControl(method = "cv", number = 10, savePredictions = 'final'),
+  method = "svmLinear"
+  )
+
+  print(train_model)
+  
+  #confusion matrix
+  SVM_10_cm <- confusionMatrix(train_model$pred[order(train_model$pred$rowIndex),]$pred, heart$target)
+  
+  print(paste("SVM 10 Fold", 'Results'))
+  print(SVM_10_cm)
+  
+ 
+  duration <- (proc.time() - timer)[[3]]
+
+  # metrics
+  SVM_10_cmaccuracy <- SVM_10_cm$overall[[1]]
+  SVM_10_cmauc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+  SVM_10_cmsensitivity <- SVM_10_cm$byClass[[1]]
+  SVM_10_cmspecificity <- SVM_10_cm$byClass[[2]]
+  SVM_10_cmprecision <- SVM_10_cm$byClass[[5]]
+  SVM_10_cmrecall <- SVM_10_cm$byClass[[6]]
+  SVM_10_cmf1_score <- SVM_10_cm$byClass[[7]]
+  SVM_10_duration <- duration
+  
+  SVM_10 <- c("SNM 10 Fold",round(SVM_10_cmaccuracy,2),round(SVM_10_cmauc,2),round(SVM_10_cmsensitivity,2),round(SVM_10_cmspecificity,2), round(SVM_10_cmprecision,2),round(SVM_10_cmrecall,2),round(SVM_10_cmf1_score,2),round(SVM_10_duration,2) )
+  
+```
+
+
+### Bootstrap of 200 Resamples | Decision Tree
+
+```{r  message=FALSE, warning=FALSE}
+
+
+
+train_model = train(
+    form = target ~ .,
+    data = heart,
+    trControl = trainControl(method="boot", number=200, savePredictions = 'final', returnResamp = 'final'),
+    method = "rpart"
+    )
+    
+    duration <- (proc.time() - timer)[[3]]
+    
+    accuracy <- c()
+    auc <- c()
+    sensitivity <- c()
+    specificity <- c()
+    precision <- c()
+    recall <- c()
+    f1_score <- c()
+    i <- 1
+    
+    pred_df <- train_model$pred
+    for (resample in unique(pred_df$Resample)){
+      temp <- filter(pred_df, Resample == resample)
+      model_cm <- confusionMatrix(temp$pred, temp$obs)
+      accuracy[i] <- model_cm$overall[[1]]
+      auc[[i]] <- auc(roc(as.numeric(temp$pred, ordered = TRUE), as.numeric(temp$obs, ordered = TRUE)))
+      sensitivity[[i]] <- model_cm$byClass[[1]]
+      specificity[[i]] <- model_cm$byClass[[2]]
+      precision[[i]] <- model_cm$byClass[[5]]
+      recall[[i]] <- model_cm$byClass[[6]]
+      f1_score[[i]] <- model_cm$byClass[[7]]
+      i <- i + 1
+    }
+  
+    dt_200_accuracy <- mean(accuracy)
+    dt_200_auc <- mean(auc)
+    dt_200_sensitivity <- mean(sensitivity)
+    dt_200_specificity <- mean(specificity)
+    dt_200_precision <- mean(precision)
+    dt_200_recall <- mean(recall)
+    dt_200_f1_score <- mean(f1_score)
+    dt_200_duration <- duration
+    
+    dt_200 <- c("Decision Tree Bootstrap",round(dt_200_accuracy,2),round(dt_200_auc,2),round(dt_200_sensitivity,2),round(dt_200_specificity,2), round(dt_200_precision,2),round(dt_200_recall,2),round(dt_200_f1_score,2),round(dt_200_duration,2) )
+  
+  
+    
+```
+
+### Bootstrap of 200 Resamples | SVM
+
+```{r  message=FALSE, warning=FALSE}
+
+train_model = train(
+    form = target ~ .,
+    data = heart,
+    trControl = trainControl(method="boot", number=200, savePredictions = 'final', returnResamp = 'final'),
+    method = "svmLinear"
+    )
+    
+    duration <- (proc.time() - timer)[[3]]
+    
+    accuracy <- c()
+    auc <- c()
+    sensitivity <- c()
+    specificity <- c()
+    precision <- c()
+    recall <- c()
+    f1_score <- c()
+    i <- 1
+    
+    pred_df <- train_model$pred
+    for (resample in unique(pred_df$Resample)){
+      temp <- filter(pred_df, Resample == resample)
+      model_cm <- confusionMatrix(temp$pred, temp$obs)
+      accuracy[i] <- model_cm$overall[[1]]
+      auc[[i]] <- auc(roc(as.numeric(temp$pred, ordered = TRUE), as.numeric(temp$obs, ordered = TRUE)))
+      sensitivity[[i]] <- model_cm$byClass[[1]]
+      specificity[[i]] <- model_cm$byClass[[2]]
+      precision[[i]] <- model_cm$byClass[[5]]
+      recall[[i]] <- model_cm$byClass[[6]]
+      f1_score[[i]] <- model_cm$byClass[[7]]
+      i <- i + 1
+    }
+  
+    SVM_200_accuracy <- mean(accuracy)
+    SVM_200_auc <- mean(auc)
+    SVM_200_sensitivity <- mean(sensitivity)
+    SVM_200_specificity <- mean(specificity)
+    SVM_200_precision <- mean(precision)
+    SVM_200_recall <- mean(recall)
+    SVM_200_f1_score <- mean(f1_score)
+    SVM_200_duration <- duration
+    
+    SVM_200 <- c("SVM  Bootstrap",round(SVM_200_accuracy,2),round(SVM_200_auc,2),round(SVM_200_sensitivity,2),round(SVM_200_specificity,2), round(SVM_200_precision,2),round(SVM_200_recall,2),round(SVM_200_f1_score,2),round(SVM_200_duration,2) )
+  
+  
+    
+```
+
+
+```{r  message=FALSE, warning=FALSE}
+results <- data.frame(matrix(ncol = 10, nrow = 0))
+results <- rbind(results,base_dt,dt_5, dt_10  , dt_200 , base_svm , SVM_5, SVM_10 , SVM_200)
+colnames(results) <- c("Model","Accuracy", "AUC","Sensitivity", "Specificity", "Precision", "Recall", "F1_Score" , "Duration")
+#results
+kable(results) %>%
+  kable_styling(bootstrap_options = "bordered") %>%
+  row_spec(0, bold = T, color = "black", background = "#7fcdcc")
+
+```
+
+## PART B
+For the same dataset, set seed (43) split 80/20.
+Using randomForest grow three different forests varuing the number of trees atleast three times. Start with seeding and fresh split for each forest. Note down as best as you can development (engineering) cost as well as computing cost(elapsed time) for each run. And compare these results with the experiment in Part A. Submit a pdf and executable script in python or R.
+
+```{r}
+set.seed(43)
+x <- floor(0.8 * nrow(heart))
+raw <- sample(seq_len(nrow(heart)), size = x)
+train_heart <- heart[ raw,]
+test_heart  <- heart[-raw,]
+
+```
+
+### 12 Trees
+
+```{r}
+
+  
+    train_model = train(
+    form = target ~ .,
+    data = train_heart,
+    trControl = trainControl(),
+    ntree = 12,
+    method = "rf"
+    )
+    print(train_model)
+    
+ # confusion Matrix from caret
+
+    rf_cm <- confusionMatrix(predict(train_model, subset(test_heart, select = -c(target))), test_heart$target)
+    
+    print(paste("RF 12", 'Results'))
+    print(rf_cm)
+    
+    rf_duration <- (proc.time() - timer)[[3]]
+  
+    # metrics
+    rf_accuracy <- rf_cm$overall[[1]]
+    rf_auc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+    rf_sensitivity <- rf_cm$byClass[[1]]
+    rf_specificity <- rf_cm$byClass[[2]]
+    rf_precision <- rf_cm$byClass[[5]]
+    rf_recall <- rf_cm$byClass[[6]]
+    rf_f1_score <- rf_cm$byClass[[7]]
+    rf_duration <- rf_duration
+   
+     rf_12 <- c("Random Forrest 16",round(rf_accuracy,2),round(rf_auc,2),round(rf_sensitivity,2),round(rf_specificity,2), round(rf_precision,2),round(rf_recall,2),round(rf_f1_score,2),round(rf_duration,2) )
+   
+    
+```
+
+
+
+
+### 24 Trees
+
+```{r}
+
+  
+    train_model = train(
+    form = target ~ .,
+    data = train_heart,
+    trControl = trainControl(),
+    ntree = 24,
+    method = "rf"
+    )
+    print(train_model)
+    
+ # confusion Matrix from caret
+
+    rf_24_cm <- confusionMatrix(predict(train_model, subset(test_heart, select = -c(target))), test_heart$target)
+    
+    print(paste("RF 24", 'Results'))
+    print(rf_cm)
+    
+    rf_24_duration <- (proc.time() - timer)[[3]]
+  
+    # metrics
+    rf_24_accuracy <- rf_24_cm$overall[[1]]
+    rf_24_auc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+    rf_24_sensitivity <- rf_24_cm$byClass[[1]]
+    rf_24_specificity <- rf_24_cm$byClass[[2]]
+    rf_24_precision <- rf_24_cm$byClass[[5]]
+    rf_24_recall <- rf_24_cm$byClass[[6]]
+    rf_24_f1_score <- rf_24_cm$byClass[[7]]
+    rf_24_duration <- rf_24_duration
+   
+     rf_24 <- c("Random Forrest 24",round(rf_24_accuracy,2),round(rf_24_auc,2),round(rf_24_sensitivity,2),round(rf_24_specificity,2), round(rf_24_precision,2),round(rf_24_recall,2),round(rf_24_f1_score,2),round(rf_24_duration,2) )
+   
+
+```
+
+### 114 Trees
+
+```{r}
+
+  
+    train_model = train(
+    form = target ~ .,
+    data = train_heart,
+    trControl = trainControl(),
+    ntree = 114,
+    method = "rf"
+    )
+    print(train_model)
+    
+ # confusion Matrix from caret
+
+    rf_114_cm <- confusionMatrix(predict(train_model, subset(test_heart, select = -c(target))), test_heart$target)
+    
+    print(paste("RF 114", 'Results'))
+    print(rf_cm)
+    
+    rf_114_duration <- (proc.time() - timer)[[3]]
+  
+    # metrics
+    rf_114_accuracy <- rf_114_cm$overall[[1]]
+    rf_114_auc <- as.numeric(auc(roc(test_heart$target, factor(predict(train_model, test_heart), ordered = TRUE))))
+    rf_114_sensitivity <- rf_114_cm$byClass[[1]]
+    rf_114_specificity <- rf_114_cm$byClass[[2]]
+    rf_114_precision <- rf_114_cm$byClass[[5]]
+    rf_114_recall <- rf_114_cm$byClass[[6]]
+    rf_114_f1_score <- rf_114_cm$byClass[[7]]
+    rf_114_duration <- rf_114_duration
+   
+     rf_114 <- c("Random Forrest 114",round(rf_114_accuracy,2),round(rf_114_auc,2),round(rf_114_sensitivity,2),round(rf_114_specificity,2), round(rf_114_precision,2),round(rf_114_recall,2),round(rf_114_f1_score,2),round(rf_114_duration,2) )
+   
+
+```
+
+## Part C
+Include a summary of your findings. Which of the two methods bootstrap vs cv do you recommend to your customer? And why? Be elaborate. Including computing costs, engineering costs and model performance. Did you incorporate Pareto's maxim or the Razor and how did these two heuristics influence your decision?
+
+```{r}
+
+final_results <- data.frame(matrix(ncol = 10, nrow = 0))
+final_results <- rbind(final_results,base_dt,dt_5, dt_10  , dt_200 , base_svm , SVM_5, SVM_10 , SVM_200,rf_12,rf_24,rf_114)
+colnames(final_results) <- c("Model","Accuracy", "AUC","Sensitivity", "Specificity", "Precision", "Recall", "F1_Score" , "Duration")
+
+kable(final_results) %>%
+  kable_styling(bootstrap_options = "bordered") %>%
+  row_spec(0, bold = T, color = "black", background = "#7fcdcc")
+```
+
+### Conclusion 
+While comparing bootstrap and cross validation. Cross validation has better performance metrics and less computational time. SVM had better model performance but elapsed time is higher than the desicion tree.  10 fold produced better results. So 10 fold cross validation should be used for both classifiers. As per Occam's Razor the problem-solving principle that "entities should not be multiplied without necessity", or more simply, the simplest explanation is usually the right one.SVM 5 fold Cross validation is prefered over SVM 10 fold and SVM bootstrap . 
+
